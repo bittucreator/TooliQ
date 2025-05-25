@@ -1,0 +1,33 @@
+# .gitignore for Next.js, Node.js, and macOS
+# Node modules
+node_modules/
+
+# Build output
+.next/
+out/
+
+# Local env files
+.env*
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS generated files
+.DS_Store
+
+# VSCode settings
+.vscode/
+
+# Mac system files
+*.DS_Store
+
+# Optional: Ignore coverage reports
+coverage/
+
+# Optional: Ignore local database files
+*.sqlite
+
+# Optional: Ignore CleanShot media
+/Users/bittu/Library/Application Support/CleanShot/media/

@@ -75,23 +75,77 @@ export default function Home() {
   const gradientRef = useRef<HTMLDivElement>(null);
   const { showToast } = useToast();
 
-  const generateGradientCSS = useCallback((config: GradientConfig) => {
-    const { type, direction, stops } = config;
-    const stopStrings = stops
-      .map((stop) => `${stop.color} ${stop.position}%`)
-      .join(", ");
+  // Utility: Convert oklch() color to hex (approximate, browser-based)
+  function oklchToHex(oklch: string): string {
+    // Only process if string starts with oklch
+    if (!oklch.startsWith("oklch")) return oklch;
+    try {
+      // Use browser to parse and convert to hex
+      const ctx = document.createElement("canvas").getContext("2d");
+      if (ctx) {
+        ctx.fillStyle = oklch;
+        // ctx.fillStyle will be in rgb(), so convert to hex
+        const rgb = ctx.fillStyle.match(/rgb\\((\\d+), (\\d+), (\\d+)\\)/);
+        if (rgb) {
+          const r = parseInt(rgb[1]).toString(16).padStart(2, "0");
+          const g = parseInt(rgb[2]).toString(16).padStart(2, "0");
+          const b = parseInt(rgb[3]).toString(16).padStart(2, "0");
+          return `#${r}${g}${b}`;
+        }
+        // If already hex
+        if (/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(ctx.fillStyle)) return ctx.fillStyle;
+      }
+    } catch {}
+    // Fallback to black if conversion fails
+    return "#000000";
+  }
 
-    switch (type) {
-      case "linear":
-        return `linear-gradient(${direction}deg, ${stopStrings})`;
-      case "radial":
-        return `radial-gradient(circle, ${stopStrings})`;
-      case "conic":
-        return `conic-gradient(from ${direction}deg, ${stopStrings})`;
-      default:
-        return `linear-gradient(${direction}deg, ${stopStrings})`;
-    }
-  }, []);
+  // Utility: Ensure all gradient stops use hex color codes
+  function ensureHexStops(stops: GradientStop[]): GradientStop[] {
+    return stops.map((stop) => {
+      // If already hex, return as is
+      if (/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(stop.color)) return stop;
+      // Convert oklch to hex if needed
+      let color = stop.color;
+      if (color.startsWith("oklch")) {
+        color = oklchToHex(color);
+      } else {
+        // Try to convert hsl/rgb to hex using browser
+        try {
+          const ctx = document.createElement("canvas").getContext("2d");
+          if (ctx) {
+            ctx.fillStyle = color;
+            color = ctx.fillStyle;
+          }
+        } catch {}
+      }
+      // If still not hex, fallback to black
+      if (!/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(color)) color = "#000000";
+      return { ...stop, color };
+    });
+  }
+
+  const generateGradientCSS = useCallback(
+    (config: GradientConfig) => {
+      const { type, direction, stops } = config;
+      const safeStops = ensureHexStops(stops);
+      const stopStrings = safeStops
+        .map((stop) => `${stop.color} ${stop.position}%`)
+        .join(", ");
+
+      switch (type) {
+        case "linear":
+          return `linear-gradient(${direction}deg, ${stopStrings})`;
+        case "radial":
+          return `radial-gradient(circle, ${stopStrings})`;
+        case "conic":
+          return `conic-gradient(from ${direction}deg, ${stopStrings})`;
+        default:
+          return `linear-gradient(${direction}deg, ${stopStrings})`;
+      }
+    },
+    [ensureHexStops]
+  );
 
   const generateRandomGradient = useCallback(() => {
     const types: Array<"linear" | "radial" | "conic"> = [
@@ -149,10 +203,10 @@ export default function Home() {
 
     setIsGenerating(true);
     try {
-      const response = await fetch('/api/generate-gradient', {
-        method: 'POST',
+      const response = await fetch("/api/generate-gradient", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({ prompt: aiPrompt }),
       });
@@ -164,13 +218,19 @@ export default function Home() {
       } else {
         // Fallback to random gradient if API fails
         generateRandomGradient();
-        showToast("AI failed to generate a gradient, showing random instead.", "error");
+        showToast(
+          "AI failed to generate a gradient, showing random instead.",
+          "error"
+        );
       }
     } catch (error) {
       console.error("Error generating AI gradient:", error);
       // Fallback to random gradient on error
       generateRandomGradient();
-      showToast("AI failed to generate a gradient, showing random instead.", "error");
+      showToast(
+        "AI failed to generate a gradient, showing random instead.",
+        "error"
+      );
     } finally {
       setIsGenerating(false);
     }
@@ -184,6 +244,11 @@ export default function Home() {
 
   const exportImage = async (format: "png" | "jpeg") => {
     if (!gradientRef.current) return;
+
+    // Use sanitized gradient CSS (no oklch)
+    const safeBackground = generateGradientCSS(gradientConfig);
+    const originalBg = gradientRef.current.style.background;
+    gradientRef.current.style.background = safeBackground;
 
     const resolution =
       exportResolution === "4K"
@@ -204,7 +269,13 @@ export default function Home() {
       showToast("Image downloaded!", "success");
     } catch (error) {
       console.error("Error exporting image:", error);
-      showToast("Failed to export image. Try again or check browser permissions.", "error");
+      showToast(
+        "Failed to export image. Try again or check browser permissions.",
+        "error"
+      );
+    } finally {
+      // Restore original background
+      gradientRef.current.style.background = originalBg;
     }
   };
 
@@ -239,7 +310,8 @@ export default function Home() {
             AI Gradient Generator
           </h1>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            Instantly create, customize, and export stunning gradients for your web projects. Powered by AI, designed for designers.
+            Instantly create, customize, and export stunning gradients for your
+            web projects. Powered by AI, designed for designers.
           </p>
         </div>
 
@@ -266,7 +338,13 @@ export default function Home() {
                   disabled={isGenerating || !aiPrompt.trim()}
                   className="w-full bg-gradient-to-r from-blue-500 to-purple-500 text-white font-semibold shadow-md hover:from-blue-600 hover:to-purple-600 flex items-center justify-center"
                 >
-                  {isGenerating ? <><Loader className="mr-2" /> Generating...</> : "Generate with AI"}
+                  {isGenerating ? (
+                    <>
+                      <Loader className="mr-2" /> Generating...
+                    </>
+                  ) : (
+                    "Generate with AI"
+                  )}
                 </Button>
               </CardContent>
             </Card>
@@ -406,15 +484,29 @@ export default function Home() {
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
-                  <Button onClick={() => exportImage("png")} variant="outline" className="border-green-200 dark:border-green-800 hover:bg-green-50 dark:hover:bg-green-900/30">
+                  <Button
+                    onClick={() => exportImage("png")}
+                    variant="outline"
+                    className="border-green-200 dark:border-green-800 hover:bg-green-50 dark:hover:bg-green-900/30"
+                    disabled={isGenerating}
+                  >
                     PNG
                   </Button>
-                  <Button onClick={() => exportImage("jpeg")} variant="outline" className="border-green-200 dark:border-green-800 hover:bg-green-50 dark:hover:bg-green-900/30">
+                  <Button
+                    onClick={() => exportImage("jpeg")}
+                    variant="outline"
+                    className="border-green-200 dark:border-green-800 hover:bg-green-50 dark:hover:bg-green-900/30"
+                    disabled={isGenerating}
+                  >
                     JPEG
                   </Button>
                 </div>
 
-                <Button onClick={copyCSS} variant="outline" className="w-full border-blue-200 dark:border-blue-800 hover:bg-blue-50 dark:hover:bg-blue-900/30">
+                <Button
+                  onClick={copyCSS}
+                  variant="outline"
+                  className="w-full border-blue-200 dark:border-blue-800 hover:bg-blue-50 dark:hover:bg-blue-900/30"
+                >
                   <Copy className="h-4 w-4 mr-2" />
                   Copy CSS
                 </Button>
@@ -426,7 +518,9 @@ export default function Home() {
           <div className="lg:col-span-2 flex flex-col justify-center items-center">
             <Card className="h-full shadow-xl border-0 bg-white/95 dark:bg-slate-900/90 backdrop-blur-lg">
               <CardHeader>
-                <CardTitle className="text-2xl font-bold text-center">Preview</CardTitle>
+                <CardTitle className="text-2xl font-bold text-center">
+                  Preview
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <div
